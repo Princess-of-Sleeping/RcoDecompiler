@@ -11,6 +11,5 @@ The tools to properly decompile PS Vita .rco files
 
 # Known issues
 
-- Lacks a lot of error checking.
 - If the files contained in the .rco contain compressed data, they will all be uncompressed. So it will be inconsistent with the .xml compress key.
 - Some code is not in the right place. For example the code to print the src file should be outside of print_xml (search "process_stringtable" on src code).

@@ -130,12 +130,15 @@ typedef struct CXmlTag {
 
 int create_file_with_recursive(const char *path, const void *data, int size){
 
+	int res;
 	int path_len = strlen(path);
 	char *new_path = malloc(path_len + 1);
 	new_path[path_len] = 0;
 	memcpy(new_path, path, path_len);
 
 	char *x, *v = new_path;
+
+	res = 0;
 
 	do {
 		x = strchr(v, '/');
@@ -145,7 +148,11 @@ int create_file_with_recursive(const char *path, const void *data, int size){
 
 			struct stat stat_info;
 			if(stat(new_path, &stat_info) != 0){
-				mkdir(new_path, 0777);
+				res = mkdir(new_path, 0777);
+				if(res < 0){
+					printf("failed mkdir 0x%X for \"%s\"\n", res, new_path);
+					break;
+				}
 				// printf("mkdir %s\n", v);
 			}
 
@@ -158,7 +165,8 @@ int create_file_with_recursive(const char *path, const void *data, int size){
 			FILE *fp;
 			fp = fopen(path, "wb");
 			if(fp == NULL){
-				return -1;
+				res = -1;
+				break;
 			}
 
 			fwrite(data, 1, (size_t)size, fp);
@@ -170,7 +178,7 @@ int create_file_with_recursive(const char *path, const void *data, int size){
 	free(new_path);
 	new_path = NULL;
 
-	return 0;
+	return res;
 }
 
 const char *rco_dec_get_string(const void *rco_data, int attr){
@@ -188,7 +196,7 @@ const SceWChar16 *rco_dec_get_wstring(const void *rco_data, int attr){
 
 	pHeader = (const SceRcoHeader *)rco_data;
 
-	return (const SceWChar16 *)(rco_data + pHeader->wstringtable_offset + attr);
+	return (const SceWChar16 *)(rco_data + pHeader->wstringtable_offset + (attr << 1));
 }
 
 int unicode2utf8(FILE *fp, SceWChar16 unicode){
@@ -228,7 +236,6 @@ int sce_paf_fwprint(FILE *fp, const SceWChar16 *wstr){
 
 	while(*wstr != 0){
 		unicode2utf8(fp, *wstr);
-
 		wstr++;
 	}
 
@@ -315,6 +322,10 @@ int parse_element_tags(const void *rco_data, const void *element, CXmlTag *tag, 
 			int key_len =  strlen(key);
 
 			char *new_key = malloc(key_len + 1);
+			if(new_key == NULL){
+				printf("%s: cannot alloc new_key\n", __FUNCTION__);
+				return -1;
+			}
 
 			new_key[key_len] = 0;
 			memcpy(new_key, key, key_len);
@@ -322,8 +333,6 @@ int parse_element_tags(const void *rco_data, const void *element, CXmlTag *tag, 
 		}
 
 		head->type = attr_type;
-
-		// printf("A %s\n", head->key);
 
 		switch(attr_type){
 		case attr_type_int:
@@ -337,6 +346,11 @@ int parse_element_tags(const void *rco_data, const void *element, CXmlTag *tag, 
 				const char *str = rco_dec_get_string(rco_data, *(SceInt32 *)(base + 8));
 				int str_len = strlen(str);
 				char *new_str = malloc(str_len + 1);
+				if(new_str == NULL){
+					printf("%s: cannot alloc new_str\n", __FUNCTION__);
+					return -1;
+				}
+
 				new_str[str_len] = 0;
 				memcpy(new_str, str, str_len);
 
@@ -345,9 +359,14 @@ int parse_element_tags(const void *rco_data, const void *element, CXmlTag *tag, 
 			break;
 		case attr_type_wstring:
 			{
-				const SceWChar16 *wstr = rco_dec_get_wstring(rco_data, *(SceInt32 *)(base + 8) << 1);
+				const SceWChar16 *wstr = rco_dec_get_wstring(rco_data, *(SceInt32 *)(base + 8));
 				int wstr_len = sce_paf_wcslen(wstr);
 				SceWChar16 *new_wstr = malloc((wstr_len + 1) * 2);
+				if(new_wstr == NULL){
+					printf("%s: cannot alloc new_wstr\n", __FUNCTION__);
+					return -1;
+				}
+
 				new_wstr[wstr_len] = 0;
 				memcpy(new_wstr, wstr, wstr_len * 2);
 
@@ -371,6 +390,11 @@ int parse_element_tags(const void *rco_data, const void *element, CXmlTag *tag, 
 				int size = *(SceInt32 *)(base + 0xC);
 
 				SceInt32 *new_intarray = malloc(sizeof(SceInt32) * size);
+				if(new_intarray == NULL){
+					printf("%s: cannot alloc head\n", __FUNCTION__);
+					return -1;
+				}
+
 				memcpy(new_intarray, &(intarraytable[offset]), sizeof(SceInt32) * size);
 
 				head->type_intarray.data = new_intarray;
@@ -386,6 +410,11 @@ int parse_element_tags(const void *rco_data, const void *element, CXmlTag *tag, 
 				int size = *(SceInt32 *)(base + 0xC);
 
 				float *new_floatarray = malloc(sizeof(float) * size);
+				if(new_floatarray == NULL){
+					printf("%s: cannot alloc head\n", __FUNCTION__);
+					return -1;
+				}
+
 				memcpy(new_floatarray, &(floatarraytable[offset]), sizeof(float) * size);
 
 				head->type_floatarray.data = new_floatarray;
@@ -400,6 +429,11 @@ int parse_element_tags(const void *rco_data, const void *element, CXmlTag *tag, 
 				int size = *(SceInt32 *)(base + 0xC);
 
 				void *new_file = malloc(size);
+				if(new_file == NULL){
+					printf("%s: cannot alloc head\n", __FUNCTION__);
+					return -1;
+				}
+
 				memcpy(new_file, filetable + offset, size);
 
 				head->type_filename.data = new_file;
@@ -411,6 +445,11 @@ int parse_element_tags(const void *rco_data, const void *element, CXmlTag *tag, 
 				const char *id = (const char *)(rco_data + pHeader->idtable_offset + *(SceInt32 *)(base + 8) + 4);
 				int id_len = strlen(id);
 				char *new_id = malloc(id_len + 1);
+				if(new_id == NULL){
+					printf("%s: cannot alloc head\n", __FUNCTION__);
+					return -1;
+				}
+
 				new_id[id_len] = 0;
 				memcpy(new_id, id, id_len);
 
@@ -429,8 +468,6 @@ int parse_element_tags(const void *rco_data, const void *element, CXmlTag *tag, 
 		default:
 			break;
 		}
-
-		// printf("B %s\n", head->key);
 	}
 
 	head = *result;
@@ -444,9 +481,9 @@ int parse_element_tags(const void *rco_data, const void *element, CXmlTag *tag, 
 
 int parse_element(const void *rco_data, const void *element, CXmlTag *parent, CXmlTag **result){
 
+	int res;
 	const SceRcoHeader *pHeader = (const SceRcoHeader *)(rco_data);
 	const SceRcoTreeHeader *element_header = (const SceRcoTreeHeader *)(element);
-
 	CXmlTag *cxml;
 
 	cxml = malloc(sizeof(*cxml));
@@ -467,6 +504,9 @@ int parse_element(const void *rco_data, const void *element, CXmlTag *parent, CX
 	int name_len = strlen(name);
 
 	char *new_name = malloc(name_len + 1);
+	if(new_name == NULL){
+		return -1;
+	}
 
 	new_name[name_len] = 0;
 	memcpy(new_name, name, name_len);
@@ -475,26 +515,37 @@ int parse_element(const void *rco_data, const void *element, CXmlTag *parent, CX
 
 	if(element_header->first_child_elm_offset == -1 && element_header->last_child_elm_offset == -1){
 
-		parse_element_tags(rco_data, element, cxml, &(cxml->kv));
+		res = parse_element_tags(rco_data, element, cxml, &(cxml->kv));
+		if(res < 0){
+			return res;
+		}
 
 	}else if(element_header->first_child_elm_offset != -1){
 
-		parse_element_tags(rco_data, element, cxml, &(cxml->kv));
-		parse_element(rco_data, rco_data + pHeader->tree_offset + element_header->first_child_elm_offset, cxml, &(cxml->child));
+		res = parse_element_tags(rco_data, element, cxml, &(cxml->kv));
+		if(res < 0){
+			return res;
+		}
 
-		// cxml->child->parent = cxml;
+		res = parse_element(rco_data, rco_data + pHeader->tree_offset + element_header->first_child_elm_offset, cxml, &(cxml->child));
+		if(res < 0){
+			return res;
+		}
 	}
 
 	if(element_header->next_elm_offset != -1){
-		parse_element(rco_data, rco_data + pHeader->tree_offset + element_header->next_elm_offset, cxml->parent, &(cxml->next));
-
-		// cxml->next->parent = cxml->parent;
+		res = parse_element(rco_data, rco_data + pHeader->tree_offset + element_header->next_elm_offset, cxml->parent, &(cxml->next));
+		if(res < 0){
+			return res;
+		}
 	}
 
 	return 0;
 }
 
 int print_cxml_tags(const char *output_path, FILE *xml_fp, CXmlKeyValue *kv){
+
+	int res;
 
 	while(kv != NULL){
 
@@ -580,6 +631,10 @@ int print_cxml_tags(const char *output_path, FILE *xml_fp, CXmlKeyValue *kv){
 					const char *part = strchr(type, '/');
 					if(part != NULL){
 						char *new_name = malloc((part - type) + 1);
+						if(new_name == NULL){
+							return -1;
+						}
+
 						new_name[part - type] = 0;
 						memcpy(new_name, type, part - type);
 						snprintf(src_path, sizeof(src_path), "%s/%s/%s_0x%08X.%s", output_path, tag->name, new_name, kv_id->type_int.data, &(part[1]));
@@ -603,24 +658,37 @@ int print_cxml_tags(const char *output_path, FILE *xml_fp, CXmlKeyValue *kv){
 
 					long unsigned int temp_size = kv_origsize->type_int.data;
 					void *temp_memory_ptr = malloc(temp_size);
+					if(temp_memory_ptr == NULL){
+						return -1;
+					}
 
 					int res = uncompress(temp_memory_ptr, &temp_size, kv->type_filename.data, kv->type_filename.size);
 					if(res != Z_OK){
 						printf("zlib uncompress failed : 0x%X\n", res);
+						res = -1;
+					}else{
+						res = create_file_with_recursive(src_path, temp_memory_ptr, kv_origsize->type_int.data);
 					}
-
-					create_file_with_recursive(src_path, temp_memory_ptr, kv_origsize->type_int.data);
 
 					free(temp_memory_ptr);
 					temp_memory_ptr = NULL;
 
+					if(res < 0){
+						return res;
+					}
 				}else{
-					create_file_with_recursive(src_path, kv->type_filename.data, kv->type_filename.size);
+					res = create_file_with_recursive(src_path, kv->type_filename.data, kv->type_filename.size);
+					if(res < 0){
+						return res;
+					}
 				}
-
 
 				int src_len = strlen(src_path);
 				char *new_src = malloc(src_len + 1);
+				if(new_src == NULL){
+					return -1;
+				}
+
 				new_src[src_len] = 0;
 				memcpy(new_src, src_path, src_len);
 
@@ -668,13 +736,21 @@ int print_cxml(const char *output_path, FILE *xml_fp, CXmlTag *cxml, int level){
 	if(cxml->child == NULL){
 
 		fprintf(xml_fp, "%s<%s", tab_data, cxml->name);
-		print_cxml_tags(output_path, xml_fp, cxml->kv);
+		res = print_cxml_tags(output_path, xml_fp, cxml->kv);
+		if(res < 0){
+			return res;
+		}
+
 		fprintf(xml_fp, " />\n");
 
 	}else if(cxml->child != NULL){
 
 		fprintf(xml_fp, "%s<%s", tab_data, cxml->name);
-		print_cxml_tags(output_path, xml_fp, cxml->kv);
+		res = print_cxml_tags(output_path, xml_fp, cxml->kv);
+		if(res < 0){
+			return res;
+		}
+
 		fprintf(xml_fp, ">\n");
 
 		res = print_cxml(output_path, xml_fp, cxml->child, level + 1);
@@ -683,7 +759,6 @@ int print_cxml(const char *output_path, FILE *xml_fp, CXmlTag *cxml, int level){
 		}
 
 		fprintf(xml_fp, "%s</%s>\n", tab_data, cxml->name);
-
 	}
 
 	free(tab_data);
@@ -706,8 +781,6 @@ int free_cxml_tags(CXmlKeyValue *kv){
 	while(kv != NULL){
 
 		kv_next = kv->next;
-
-		// printf("%s\n", kv->key);
 
 		switch(kv->type){
 		case attr_type_int:
@@ -746,8 +819,6 @@ int free_cxml_tags(CXmlKeyValue *kv){
 			break;
 		}
 
-		// printf("B\n");
-
 		free(kv->key);
 		free(kv);
 
@@ -777,6 +848,7 @@ int free_cxml(CXmlTag *cxml){
 
 int RcsDecompiler_core(const char *xml_name, const void *rcs_data, int rcs_size){
 
+	int res;
 	const SceRcoHeader *pHeader;
 	CXmlTag *result;
 	FILE *xml_fp;
@@ -796,15 +868,17 @@ int RcsDecompiler_core(const char *xml_name, const void *rcs_data, int rcs_size)
 	fprintf(xml_fp, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
 	// fprintf(xml_fp, "<?xml version=\"1.0\" encoding=\"unicode\"?>\n");
 
-	parse_element(rcs_data, (const void *)(rcs_data + pHeader->tree_offset), NULL, &result);
-	print_cxml("NULL", xml_fp, result, 0);
+	res = parse_element(rcs_data, (const void *)(rcs_data + pHeader->tree_offset), NULL, &result);
+	if(res >= 0){
+		res = print_cxml("NULL", xml_fp, result, 0);
+	}
 	free_cxml(result);
 	result = NULL;
 
 	fclose(xml_fp);
 	xml_fp = NULL;
 
-	return 0;
+	return res;
 }
 
 int RcsDecompiler(const char *xml_name, const char *path, int flags){
@@ -895,6 +969,7 @@ int xml_list_callback(FSListEntry *ent, void *argp){
 
 int RcoDecompiler_core(const char *plugin_name, const void *rco_data, int rco_size){
 
+	int res;
 	const SceRcoHeader *pHeader;
 	CXmlTag *result;
 	char xml_name[0x40];
@@ -910,7 +985,10 @@ int RcoDecompiler_core(const char *plugin_name, const void *rco_data, int rco_si
 
 	snprintf(xml_name, sizeof(xml_name), "%s/", plugin_name);
 
-	create_file_with_recursive(xml_name, NULL, 0);
+	res = create_file_with_recursive(xml_name, NULL, 0);
+	if(res < 0){
+		return res;
+	}
 
 	snprintf(xml_name, sizeof(xml_name), "%s/%s.xml", plugin_name, plugin_name);
 
@@ -922,8 +1000,10 @@ int RcoDecompiler_core(const char *plugin_name, const void *rco_data, int rco_si
 
 	fprintf(xml_fp, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
 
-	parse_element(rco_data, (const void *)(rco_data + pHeader->tree_offset), NULL, &result);
-	print_cxml(plugin_name, xml_fp, result, 0);
+	res = parse_element(rco_data, (const void *)(rco_data + pHeader->tree_offset), NULL, &result);
+	if(res >= 0){
+		res = print_cxml(plugin_name, xml_fp, result, 0);
+	}
 
 	// TODO: Properly handle it here instead of inside print_cxml.
 	// process_stringtable(result);
@@ -946,7 +1026,7 @@ int RcoDecompiler_core(const char *plugin_name, const void *rco_data, int rco_si
 		fs_list_fini(ent);
 	}
 
-	return 0;
+	return res;
 }
 
 int RcoDecompiler(const char *path, int flags){
@@ -1008,7 +1088,12 @@ int RcoDecompiler(const char *path, int flags){
 
 int main(int argc, char *argv[]){
 
-	RcoDecompiler(argv[1], 0);
+	int res;
+
+	res = RcoDecompiler(argv[1], 0);
+	if(res < 0){
+		return 1;
+	}
 
 	return 0;
 }
