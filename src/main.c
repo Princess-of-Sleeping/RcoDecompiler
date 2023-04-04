@@ -939,9 +939,10 @@ int RcoDecompiler_core(const char *plugin_name, const void *rco_data, int rco_si
 
 		snprintf(xml_name, sizeof(xml_name), "%s/locale", plugin_name);
 
-		fs_list_init(xml_name, &ent, NULL, NULL);
-
-		fs_list_execute(ent->child, xml_list_callback, NULL);
+		int res = fs_list_init(xml_name, &ent, NULL, NULL);
+		if(res >= 0){
+			fs_list_execute(ent->child, xml_list_callback, NULL);
+		}
 		fs_list_fini(ent);
 	}
 
